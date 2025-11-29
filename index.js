@@ -7,6 +7,12 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const port = process.env.PORT || 3000;
 
+function generateTrackingId() {
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const date = Date.now().toString().slice(-6);
+  return `TRK-${date}-${random}`;
+}
+
 // middleware
 app.use(express.json());
 app.use(cors());
@@ -29,6 +35,7 @@ async function run() {
 
     const db = client.db("zap_shift_db");
     const parcelCollection = db.collection("parcels");
+    const paymentCollection = db.collection("payments");
 
     // parcel api
     app.get("/parcels", async (req, res) => {
@@ -90,9 +97,10 @@ async function run() {
         mode: "payment",
         metadata: {
           parcelId: paymentInfo.parcelId,
+          parcelName: paymentInfo.parcelName,
         },
         customer_email: paymentInfo.senderEmail,
-        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?success_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
       });
 
@@ -128,6 +136,49 @@ async function run() {
 
       console.log("Stripe Session Created →", session.id);
       res.send({ url: session.url });
+    });
+
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log("session retrieve", session);
+      const trackingId = generateTrackingId();
+      if (session.payment_status === "paid") {
+        const id = session.metadata.parcelId;
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            paymentStatus: "paid",
+            trackingId: trackingId,
+          },
+        };
+        const result = await parcelCollection.updateOne(query, update);
+
+        const payment = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          parcelId: session.metadata.parcelId,
+          parcelName: session.metadata.parcelName,
+          transactionId: session.payment_intent,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+
+        if (session.payment_status === "paid") {
+          const resultPayment = await paymentCollection.insertOne(payment);
+
+          return res.send({
+            success: true,
+            modifyParcel: result,
+            paymentInfo: resultPayment,
+            trackingId: trackingId,
+            transactionId: session.payment_intent,
+          });
+        }
+      }
+
+      res.send({ success: false });
     });
 
     // Send a ping to confirm a successful connection
