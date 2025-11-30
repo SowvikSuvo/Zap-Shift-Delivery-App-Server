@@ -268,6 +268,17 @@ async function run() {
     });
 
     // riders related apis
+
+    app.get("/riders", async (req, res) => {
+      const query = {};
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+      const cursor = riderCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     app.post("/riders", async (req, res) => {
       const rider = req.body;
       rider.status = "pending";
