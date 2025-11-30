@@ -69,6 +69,7 @@ async function run() {
     const userCollection = db.collection("users");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+    const riderCollection = db.collection("riders");
 
     // user related apis
     app.post("/users", async (req, res) => {
@@ -263,6 +264,16 @@ async function run() {
       }
       const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
       const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // riders related apis
+    app.post("/riders", async (req, res) => {
+      const rider = req.body;
+      rider.status = "pending";
+      rider.createdAt = new Date();
+
+      const result = await riderCollection.insertOne(rider);
       res.send(result);
     });
 
