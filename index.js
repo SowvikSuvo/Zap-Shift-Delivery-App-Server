@@ -86,7 +86,20 @@ async function run() {
 
     // user related apis
     app.get("/users", verifyFBToken, async (req, res) => {
-      const cursor = userCollection.find();
+      const searchText = req.query.searchText;
+      const query = {};
+      if (searchText) {
+        // query.displayName = { $regex: searchText, $options: "i" };
+        query.$or = [
+          { displayName: { $regex: searchText, $options: "i" } },
+          { email: { $regex: searchText, $options: "i" } },
+        ];
+      }
+
+      const cursor = userCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .limit(10);
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -136,10 +149,14 @@ async function run() {
     // parcel api
     app.get("/parcels", async (req, res) => {
       const query = {};
-      const { email } = req.query;
+      const { email, deliveryStatus } = req.query;
+
       // /parcel?email=''&
       if (email) {
         query.senderEmail = email;
+      }
+      if (deliveryStatus) {
+        query.deliveryStatus = deliveryStatus;
       }
 
       const options = { sort: { createdAt: -1 } };
@@ -260,6 +277,7 @@ async function run() {
         const update = {
           $set: {
             paymentStatus: "paid",
+            deliveryStatus: "pending-pickup",
             trackingId: trackingId,
           },
         };
@@ -341,6 +359,7 @@ async function run() {
       const updateDoc = {
         $set: {
           status: status,
+          workStatus: "available",
         },
       };
       const result = await riderCollection.updateOne(query, updateDoc);
